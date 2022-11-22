@@ -79,9 +79,8 @@ void PhoxiCollectorNode::collectService(
       auto cloud_msg = result->cloud;
       pcl::PointCloud<pcl::PointXYZ> pcd;
       pcl::fromROSMsg(cloud_msg, pcd);
-      pcl::io::savePCDFileASCII(filepath_cloud, pcd);
+      pcl::io::savePCDFileBinaryCompressed(filepath_cloud, pcd);
       RCLCPP_INFO(this->get_logger(), "Pointcloud saved to %s", filepath_cloud.c_str());
-      rclcpp::shutdown();
     };
 
   auto future_result =
