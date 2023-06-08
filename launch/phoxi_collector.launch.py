@@ -37,6 +37,7 @@ def generate_launch_description():
         output='screen',
         remappings=[
                 ("image_raw", "/camera/image_raw")
+                ("depth_raw", "/camera/depth_raw")
                 ],
         parameters=[
             LaunchConfiguration('phoxi_collector_config_param_file')

@@ -41,18 +41,24 @@ public:
   explicit PhoxiCollectorNode(const rclcpp::NodeOptions & options);
 
 private:
-  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr camera_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr camera_rgb_sub_;
+  rclcpp::Subscription<sensor_msgs::msg::Image>::SharedPtr camera_depth_sub_;
   rclcpp::Client<phoxi_camera_msgs::srv::PhoxiCloud>::SharedPtr cloud_client_;
   rclcpp::Client<phoxi_camera_msgs::srv::PhoxiCloud>::SharedFuture cloud_future_;
   rclcpp::Service<std_srvs::srv::Empty>::SharedPtr collect_service_;
   rclcpp::Node::SharedPtr service_node_;
   phoxi_camera_msgs::srv::PhoxiCloud_Request::SharedPtr cloud_request_;
-  void cameraCallback(const sensor_msgs::msg::Image & msg);
-  sensor_msgs::msg::Image img_msg_;
+  void cameraRgbCallback(const sensor_msgs::msg::Image & msg);
+  void cameraDepthCallback(const sensor_msgs::msg::Image & msg);
+  sensor_msgs::msg::Image img_rgb_msg_;
+  sensor_msgs::msg::Image img_depth_msg_;
   void collectService(
     const std_srvs::srv::Empty::Request::SharedPtr request,
     std_srvs::srv::Empty::Response::SharedPtr response);
   std::string save_dir_;
+  bool use_phoxi_;
+  bool use_external_rgb_;
+  bool use_external_depth_;
 };
 
 

@@ -25,10 +25,14 @@ using ServiceResponseFuture = rclcpp::Client<phoxi_camera_msgs::srv::PhoxiCloud>
 PhoxiCollectorNode::PhoxiCollectorNode(const rclcpp::NodeOptions & options)
 : Node("phoxi_collector", options)
 {
-  camera_sub_ =
+  camera_rgb_sub_ =
     this->create_subscription<sensor_msgs::msg::Image>(
     "image_raw", 1,
-    std::bind(&PhoxiCollectorNode::cameraCallback, this, std::placeholders::_1));
+    std::bind(&PhoxiCollectorNode::cameraRgbCallback, this, std::placeholders::_1));
+  camera_depth_sub_ =
+    this->create_subscription<sensor_msgs::msg::Image>(
+    "depth_raw", 1,
+    std::bind(&PhoxiCollectorNode::cameraDepthCallback, this, std::placeholders::_1));
   cloud_client_ = this->create_client<phoxi_camera_msgs::srv::PhoxiCloud>(
     "/phoxi/phoxi_camera/cloud");
   collect_service_ =
@@ -39,6 +43,9 @@ PhoxiCollectorNode::PhoxiCollectorNode(const rclcpp::NodeOptions & options)
       std::placeholders::_2));
   cloud_request_ = std::make_shared<phoxi_camera_msgs::srv::PhoxiCloud::Request>();
   save_dir_ = this->declare_parameter("save_dir", "");
+  use_phoxi_ = this->declare_parameter("use_phoxi", true);
+  use_external_rgb_ = this->declare_parameter("use_external_rgb", true);
+  use_external_depth_ = this->declare_parameter("use_external_depth", true);
   if (save_dir_.empty()) {
     save_dir_.append(std::getenv("HOME"));
     save_dir_.append("/.PhotoneoPhoXiControl/");
@@ -49,42 +56,65 @@ PhoxiCollectorNode::PhoxiCollectorNode(const rclcpp::NodeOptions & options)
   }
 }
 
-void PhoxiCollectorNode::cameraCallback(const sensor_msgs::msg::Image & msg)
+void PhoxiCollectorNode::cameraRgbCallback(const sensor_msgs::msg::Image & msg)
 {
-  img_msg_ = msg;
+  img_rgb_msg_ = msg;
+}
+
+void PhoxiCollectorNode::cameraDepthCallback(const sensor_msgs::msg::Image & msg)
+{
+  img_depth_msg_ = msg;
 }
 
 void PhoxiCollectorNode::collectService(
   const std_srvs::srv::Empty::Request::SharedPtr request,
   std_srvs::srv::Empty::Response::SharedPtr response)
 {
-  auto last_img_msg = img_msg_;
   auto stamp = this->get_clock()->now();
-  const std::string filepath_img = save_dir_ + "img_" + std::to_string(stamp.seconds()) + ".jpg";
+  const std::string filepath_rgb_img = save_dir_ + "rgb_" + std::to_string(stamp.seconds()) +
+    ".png";
+  const std::string filepath_depth_img = save_dir_ + "depth_" + std::to_string(stamp.seconds()) +
+    ".png";
   const std::string filepath_cloud = save_dir_ + "cloud_" + std::to_string(stamp.seconds()) +
     ".pcd";
 
-  cv_bridge::CvImagePtr cv_ptr;
-  try {
-    cv_ptr = cv_bridge::toCvCopy(img_msg_, sensor_msgs::image_encodings::BGR8);
-  } catch (cv_bridge::Exception & e) {
-    RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
-    return;
+  if (use_external_rgb_) {
+    cv_bridge::CvImagePtr cv_ptr;
+    try {
+      cv_ptr = cv_bridge::toCvCopy(img_rgb_msg_, sensor_msgs::image_encodings::BGR8);
+    } catch (cv_bridge::Exception & e) {
+      RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
+      return;
+    }
+    cv::imwrite(filepath_rgb_img, cv_ptr->image);
+    RCLCPP_INFO(this->get_logger(), "RGB image saved to %s", filepath_rgb_img.c_str());
   }
-  cv::imwrite(filepath_img, cv_ptr->image);
-  RCLCPP_INFO(this->get_logger(), "Image saved to %s", filepath_img.c_str());
 
-  auto response_received_callback = [this, filepath_cloud](ServiceResponseFuture future) {
-      auto result = future.get();
-      auto cloud_msg = result->cloud;
-      pcl::PointCloud<pcl::PointXYZ> pcd;
-      pcl::fromROSMsg(cloud_msg, pcd);
-      pcl::io::savePCDFileBinaryCompressed(filepath_cloud, pcd);
-      RCLCPP_INFO(this->get_logger(), "Pointcloud saved to %s", filepath_cloud.c_str());
-    };
+  if (use_external_depth_) {
+    cv_bridge::CvImagePtr cv_ptr;
+    try {
+      cv_ptr = cv_bridge::toCvCopy(img_depth_msg_, sensor_msgs::image_encodings::TYPE_32FC1);
+    } catch (cv_bridge::Exception & e) {
+      RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
+      return;
+    }
+    cv::imwrite(filepath_depth_img, cv_ptr->image);
+    RCLCPP_INFO(this->get_logger(), "Depth image saved to %s", filepath_depth_img.c_str());
+  }
 
-  auto future_result =
-    cloud_client_->async_send_request(cloud_request_, response_received_callback);
+  if (use_phoxi_) {
+    auto response_received_callback = [this, filepath_cloud](ServiceResponseFuture future) {
+        auto result = future.get();
+        auto cloud_msg = result->cloud;
+        pcl::PointCloud<pcl::PointXYZ> pcd;
+        pcl::fromROSMsg(cloud_msg, pcd);
+        pcl::io::savePCDFileBinaryCompressed(filepath_cloud, pcd);
+        RCLCPP_INFO(this->get_logger(), "Pointcloud saved to %s", filepath_cloud.c_str());
+      };
+
+    auto future_result =
+      cloud_client_->async_send_request(cloud_request_, response_received_callback);
+  }
 }
 
 }  // namespace phoxi_collector
